@@ -22,4 +22,4 @@ echo "Installation complete."
 echo "Usage:"
 echo "  private-net-apps start       # jalankan vpn-on.sh"
 echo "  private-net-apps shut        # jalankan vpn-off.sh"
-echo "  private-net-apps shuffle ... # jalankan vpn-shuffle.sh"`
+echo "  private-net-apps shuffle ... # jalankan vpn-shuffle.sh"
