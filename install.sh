@@ -179,7 +179,7 @@ ui_install() {
   done
 }
 
-ui_install tor obfs4proxy
+ui_install tor obfs4proxy snowflake-client
 
 # copy semua komponen ke /usr/local/bin
 cp ./vpn-on.sh /usr/local/bin/vpn-on.sh
@@ -193,11 +193,13 @@ chmod +x /usr/local/bin/vpn-off.sh
 chmod +x /usr/local/bin/vpn-shuffle.sh
 chmod +x /usr/local/bin/private-net-apps
 
-echo "Installation complete."
+echo "Installasi Selesai."
 echo "Usage:"
 echo "  private-net-apps [start|shut|shuffle] [args]"
-echo "Args for start:"
+echo "  sudo AUTO_SNOWFLAKE=1 private-net-apps start -level 1   Pengganti Level 1 obfs4 jika list tidak bridge ditak ditemukan"
+echo "Args untuk start:"
 echo "  iface <name>         Interface fisik (default: wlan0)"
 echo "  level <0|1>      Tingkat proteksi (default: 0 basic)"
+echo "  level <0|1>      Tingkat proteksi (default: 1 obfs4)"
 echo ""
 echo "shuffle (still dev):"

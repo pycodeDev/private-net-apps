@@ -17,12 +17,12 @@ ip link set "$IFACE" down
 macchanger -r "$IFACE"
 ip link set "$IFACE" up
 
-echo "[2] Enable Windscribe firewall (killswitch)..."
+echo "[2] Aktifkan Windscribe firewall (killswitch)..."
 # ini akan blok semua trafik non-VPN, dan mengizinkan koneksi ke server Windscribe saja
 systemctl enable --now windscribe-helper.service >/dev/null 2>&1 || true
 windscribe-cli firewall on
 
-echo "[3] Connecting Windscribe..."
+echo "[3] Koneksi Windscribe..."
 if [[ -n "$WS_COUNTRY" ]]; then
   windscribe-cli connect "$WS_COUNTRY"
 else
@@ -43,6 +43,50 @@ echo "[i] VPN interface detected: ${VPN_IF:-unknown}"
 
 echo "[4] Start Tor service..."
 
+fetch_obfs4_bridges() {
+  local tmp="$(mktemp)"
+  # coba beberapa varian query
+  local urls=(
+    "https://bridges.torproject.org/bridges?transport=obfs4"
+    "https://bridges.torproject.org/bridges?transport=obfs4&ipv6=false"
+    "https://bridges.torproject.org/bridges?transport=obfs4&country=ID"
+  )
+
+  local ua="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari"
+  : > "$tmp"
+  local u
+  for u in "${urls[@]}"; do
+    curl -fsSL --max-time 15 -A "$ua" "$u" 2>/dev/null | \
+      sed -n 's/^[[:space:]]*//; /^Bridge obfs4 /p' >> "$tmp" || true
+    # stop kalau sudah dapat minimal 2 baris
+    if [ "$(grep -c '^Bridge obfs4 ' "$tmp" || true)" -ge 2 ]; then
+      break
+    fi
+    sleep 1
+  done
+
+  # tulis unik maksimal 5 baris
+  if grep -q '^Bridge obfs4 ' "$tmp"; then
+    sort -u "$tmp" | head -n 5 > "$BRLIST"
+    rm -f "$tmp"
+    return 0
+  else
+    rm -f "$tmp"
+    return 1
+  fi
+}
+
+enable_snowflake_fallback() {
+  # butuh paket snowflake-client (Debian/Kali)
+  ensure_pkg snowflake-client
+  cat > "$BRCONF" <<'EOF'
+UseBridges 1
+ClientTransportPlugin snowflake exec /usr/bin/snowflake-client -url https://snowflake.torproject.org/ -broker https://snowflake-broker.torproject.net/ -front cdn.sstatic.net -ice stun:stun.stunprotocol.org:3478
+# SocksPort default 9050
+EOF
+  echo "[i] Snowflake fallback enabled."
+}
+
 start_tor_basic() {
   # Tor standar (tanpa bridges)
   systemctl enable --now tor 2>/dev/null || systemctl enable --now tor@default 2>/dev/null || {
@@ -56,17 +100,23 @@ start_tor_level1() {
   BRCONF="/etc/tor/torrc.d/private-net.conf"
   BRLIST="/etc/tor/bridges.txt"
 
-  if [[ ! -s "$BRLIST" ]]; then
-    cat > "$BRLIST" <<'EOT'
-# Isi dengan bridge lines obfs4 dari https://bridges.torproject.org/
-# Contoh:
-# Bridge obfs4 1.2.3.4:9001 0123456789ABCDEF... cert=XXXX iat-mode=0
-EOT
-    echo "[!] No bridges at $BRLIST."
-    echo "    Get obfs4 bridges from https://bridges.torproject.org/ then add to that file."
-    echo "    Falling back to basic Tor for now."
-    start_tor_basic
-    return
+  # kalau belum ada bridges.txt atau kosong, coba ambil otomatis
+  if [ ! -s "$BRLIST" ]; then
+    echo "[i] Mencoba mendapatkan obfs4 bridges dari BridgeDB..."
+    if ! fetch_obfs4_bridges; then
+      echo "[!] Tidak bisa mendapatkan obfs4 bridges [CAPTCHA Protected]."
+      echo "    Silahkan Isi Manual Bridges Dari https://bridges.torproject.org/ dan simpan di $BRLIST."
+      if [ "${AUTO_SNOWFLAKE:-0}" = "1" ]; then
+        enable_snowflake_fallback
+        systemctl restart tor 2>/dev/null || tor -f /etc/tor/torrc & disown
+        return
+      else
+        echo "[i] Dialihkan ke mode basic."
+        echo "    Silahkan Isi Manual Bridges Dari https://bridges.torproject.org/ dan simpan di $BRLIST."
+        start_tor_basic
+        return
+      fi
+    fi
   fi
 
   cat > "$BRCONF" <<EOF
@@ -85,7 +135,7 @@ EOF
 case "$PRIVNET_LEVEL" in
   0)  echo "[i] Tor mode: basic";  start_tor_basic ;;
   1)      echo "[i] Tor mode: stealth (obfs4 bridges)"; start_tor_level1 ;;
-  *)      echo "[!] Unknown level '$PRIVNET_LEVEL' → using basic"; start_tor_basic ;;
+  *)      echo "[!] Level Tidak Diketahui '$PRIVNET_LEVEL' → Gunakan basic"; start_tor_basic ;;
 esac
 
 echo "[5] Configure proxychains4..."
@@ -100,7 +150,7 @@ socks5 127.0.0.1 9050
 EOF
 
 echo "[6] Quick tests"
-echo " - Your VPN IP:"
+echo " - VPN IP:"
 curl -s https://ifconfig.me || true
 echo
 echo " - Via Tor (proxychains):"
@@ -108,7 +158,7 @@ proxychains4 curl -s https://ifconfig.me || true
 echo
 proxychains4 curl -s https://check.torproject.org/ || true
 
-echo "[✓] Done. All traffic is protected by Windscribe; apps via proxychains4 go through Tor."
-echo "Usage examples:"
+echo "[✓] Selesai. Semua trafik dilindungi oleh Windscribe; aplikasi melalui proxychains4 melalui Tor."
+echo "Contoh Penggunan:"
 echo "  - Normal (VPN only):   curl https://example.com"
 echo "  - Through Tor:         proxychains4 curl https://example.com"
