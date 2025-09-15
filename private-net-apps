@@ -1,0 +1,35 @@
+#!/bin/bash
+set -euo pipefail
+
+usage() {  
+	cat <<EOF
+		Run private-net-apps As Root Mode
+		Usage:    sudo private-net-apps [Mode] {Argument} 
+		Mode:    
+			start          start private network apps    
+			shut           shut down private network apps    
+			shuffle        shuffle private network apps
+		Argument (opsional in shuffle Mode):  
+			ONLY_FREE=1           only use FREE location (default 1)  
+			COUNTRY_ALLOW="US,DE" lock country (2 alphabet code) (default = all)  
+			INTERVAL=600          interval in seconds (default = 600)
+EOF}
+
+[ "$(id -u)" -eq 0 ] || { usage; echo "Run as root"; exit 1; }
+
+case "${1:-}" in  
+	start)    
+		/usr/local/bin/vpn-on.sh    
+		;;  
+	shut)    
+		/usr/local/bin/vpn-off.sh    
+		;;  
+	shuffle)    
+		shift    
+		/usr/local/bin/vpn-shuffle.sh "$@"    
+		;; 
+	*)    
+		usage    
+		exit 1    
+		;;
+esac
