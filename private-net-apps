@@ -13,7 +13,8 @@ usage() {
 			ONLY_FREE=1           only use FREE location (default 1)  
 			COUNTRY_ALLOW="US,DE" lock country (2 alphabet code) (default = all)  
 			INTERVAL=600          interval in seconds (default = 600)
-EOF}
+EOF
+}
 
 [ "$(id -u)" -eq 0 ] || { usage; echo "Run as root"; exit 1; }
 
