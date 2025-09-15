@@ -60,7 +60,7 @@ Di dalamnya tersedia 3 perintah utama:
 
 ## 🔹 Flowchart Jalur Koneksi
 
-```mermaid
+```bash
 flowchart TD
     A[User / App] -->|VPN only| B[VPN Windscribe]
     B --> C[ISP]
@@ -73,7 +73,6 @@ flowchart TD
     A -->|Proxychains4 + Stealth| G[Tor via obfs4/snowflake]
     G --> F
 ```
-
 ---
 
 ## 🔹 Prasyarat
