@@ -89,6 +89,8 @@ flowchart TD
     [install.sh](https://github.com/pycodeDev/private-net-apps/blob/main/install.sh)
     
     ```bash
+    cd private-net-apps
+    chmod +x ./install.sh
     sudo ./install.sh
     ```
     
