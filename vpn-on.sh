@@ -2,8 +2,10 @@
 set -euo pipefail
 
 # ========== CONFIG ==========
-IFACE="${IFACE:-wlan0}"                           # interface wifi/lan kamu
+IFACE="${IFACE:-wlan0}" # interface wifi/lan kamu
+PRIVNET_LEVEL="${PRIVNET_LEVEL:-basic}"
 PROXYCHAINS_CONF="/etc/proxychains4.conf"
+
 # OPSIONAL: pilih negara default (kosongkan untuk server terbaik otomatis)
 WS_COUNTRY="${WS_COUNTRY:-}"            # contoh: "US" / "DE" / "SG"
 
@@ -40,8 +42,51 @@ fi
 echo "[i] VPN interface detected: ${VPN_IF:-unknown}"
 
 echo "[4] Start Tor service..."
-systemctl start tor
-sleep 2
+
+start_tor_basic() {
+  # Tor standar (tanpa bridges)
+  systemctl enable --now tor 2>/dev/null || systemctl enable --now tor@default 2>/dev/null || {
+    tor -f /etc/tor/torrc & disown
+  }
+}
+
+start_tor_level1() {
+  # Stealth: Tor via obfs4 bridges
+  mkdir -p /etc/tor/torrc.d
+  BRCONF="/etc/tor/torrc.d/private-net.conf"
+  BRLIST="/etc/tor/bridges.txt"
+
+  if [[ ! -s "$BRLIST" ]]; then
+    cat > "$BRLIST" <<'EOT'
+# Isi dengan bridge lines obfs4 dari https://bridges.torproject.org/
+# Contoh:
+# Bridge obfs4 1.2.3.4:9001 0123456789ABCDEF... cert=XXXX iat-mode=0
+EOT
+    echo "[!] No bridges at $BRLIST."
+    echo "    Get obfs4 bridges from https://bridges.torproject.org/ then add to that file."
+    echo "    Falling back to basic Tor for now."
+    start_tor_basic
+    return
+  fi
+
+  cat > "$BRCONF" <<EOF
+UseBridges 1
+ClientTransportPlugin obfs4 exec /usr/bin/obfs4proxy
+# load all user bridges
+%include $BRLIST
+SocksPort 9050
+EOF
+
+  systemctl enable --now tor 2>/dev/null || systemctl enable --now tor@default 2>/dev/null || {
+    tor -f /etc/tor/torrc & disown
+  }
+}
+
+case "$PRIVNET_LEVEL" in
+  basic)  echo "[i] Tor mode: basic";  start_tor_basic ;;
+  1)      echo "[i] Tor mode: stealth (obfs4 bridges)"; start_tor_level1 ;;
+  *)      echo "[!] Unknown level '$PRIVNET_LEVEL' → using basic"; start_tor_basic ;;
+esac
 
 echo "[5] Configure proxychains4..."
 cat > "$PROXYCHAINS_CONF" <<'EOF'

@@ -6,46 +6,40 @@ usage() {
 Run private-net-apps as root.
 
 Usage:
-  sudo private-net-apps [Mode] {Options}
+  sudo private-net-apps <start|shut|shuffle> [options]
 
-Mode:
-  start          start private network apps
-  shut           shut down private network apps
-  shuffle        shuffle private network apps
+Options (mode start):
+  -iface <name>         Interface fisik (default: wlan0)
+  -level <basic|1>      Tingkat proteksi:
+                        - basic : VPN + Tor biasa (default)
+                        - 1     : VPN + Tor via obfs4 bridges (stealth)
 
-Options (hanya untuk mode start):
-  -iface <name>        pilih interface (default wlan0)
+Options (mode shuffle): diteruskan ke vpn-shuffle.sh (ONLY_FREE, COUNTRY_ALLOW, INTERVAL)
 
-Arguments (opsional untuk mode shuffle):
-  ONLY_FREE=1           only use FREE locations (default 1)
-  COUNTRY_ALLOW="US,DE" whitelist countries (2-letter codes)
-  INTERVAL=600          rotation interval in seconds
+Examples:
+  sudo private-net-apps start
+  sudo private-net-apps start -iface eth0 -level 1
+  sudo private-net-apps shut
+  sudo private-net-apps shuffle once
 EOF
 }
 
 [ "$(id -u)" -eq 0 ] || { usage; echo "Run as root"; exit 1; }
 
-MODE="${1:-}"
-shift || true   # geser argumen supaya $@ tinggal options
+MODE="${1:-}"; shift || true
 
-case "$MODE" in
+case "${MODE}" in
   start)
-    IFACE="wlan0"  # default
+    IFACE="wlan0"
+    LEVEL="basic"
     while [[ $# -gt 0 ]]; do
       case "$1" in
-        -iface)
-          IFACE="$2"
-          shift 2
-          ;;
-        *)
-          echo "Unknown option: $1"
-          usage
-          exit 1
-          ;;
+        -iface) IFACE="${2:-}"; shift 2;;
+        -level) LEVEL="${2:-}"; shift 2;;
+        *) echo "Unknown option: $1"; usage; exit 1;;
       esac
     done
-    # jalankan vpn-on.sh dengan iface sebagai env
-    IFACE="$IFACE" /usr/local/bin/vpn-on.sh
+    IFACE="$IFACE" PRIVNET_LEVEL="$LEVEL" /usr/local/bin/vpn-on.sh
     ;;
   shut)
     /usr/local/bin/vpn-off.sh
@@ -54,7 +48,5 @@ case "$MODE" in
     /usr/local/bin/vpn-shuffle.sh "$@"
     ;;
   *)
-    usage
-    exit 1
-    ;;
+    usage; exit 1;;
 esac
