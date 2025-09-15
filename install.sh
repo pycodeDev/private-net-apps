@@ -195,6 +195,9 @@ chmod +x /usr/local/bin/private-net-apps
 
 echo "Installation complete."
 echo "Usage:"
-echo "  private-net-apps start       # jalankan vpn-on.sh"
-echo "  private-net-apps shut        # jalankan vpn-off.sh"
-echo "  private-net-apps shuffle ... # jalankan vpn-shuffle.sh"
+echo "  private-net-apps [start|shut|shuffle] [args]"
+echo "Args for start:"
+echo "  iface <name>         Interface fisik (default: wlan0)"
+echo "  level <0|1>      Tingkat proteksi (default: 0 basic)"
+echo ""
+echo "shuffle (still dev):"

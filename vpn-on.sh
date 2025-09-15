@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ========== CONFIG ==========
 IFACE="${IFACE:-wlan0}" # interface wifi/lan kamu
-PRIVNET_LEVEL="${PRIVNET_LEVEL:-basic}"
+PRIVNET_LEVEL="${PRIVNET_LEVEL:-0}"
 PROXYCHAINS_CONF="/etc/proxychains4.conf"
 
 # OPSIONAL: pilih negara default (kosongkan untuk server terbaik otomatis)
@@ -83,7 +83,7 @@ EOF
 }
 
 case "$PRIVNET_LEVEL" in
-  basic)  echo "[i] Tor mode: basic";  start_tor_basic ;;
+  0)  echo "[i] Tor mode: basic";  start_tor_basic ;;
   1)      echo "[i] Tor mode: stealth (obfs4 bridges)"; start_tor_level1 ;;
   *)      echo "[!] Unknown level '$PRIVNET_LEVEL' → using basic"; start_tor_basic ;;
 esac

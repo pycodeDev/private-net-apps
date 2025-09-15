@@ -20,7 +20,7 @@ Examples:
   sudo private-net-apps start
   sudo private-net-apps start -iface eth0 -level 1
   sudo private-net-apps shut
-  sudo private-net-apps shuffle once
+  sudo private-net-apps shuffle once //still developing
 EOF
 }
 
