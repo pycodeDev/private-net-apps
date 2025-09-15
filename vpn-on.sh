@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ========== CONFIG ==========
-IFACE="wlan0"                           # interface wifi/lan kamu
+IFACE="${IFACE:-wlan0}"                           # interface wifi/lan kamu
 PROXYCHAINS_CONF="/etc/proxychains4.conf"
 # OPSIONAL: pilih negara default (kosongkan untuk server terbaik otomatis)
 WS_COUNTRY="${WS_COUNTRY:-}"            # contoh: "US" / "DE" / "SG"
