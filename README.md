@@ -1,10 +1,5 @@
 # Private Network + [Windscribe](https://windscribe.com/)
 
-[![License](https://img.shields.io/github/license/pycodeDev/private-net-apps)](https://github.com/pycodeDev/private-net-apps/blob/main/LICENSE)
-[![Stars](https://img.shields.io/github/stars/pycodeDev/private-net-apps?style=social)](https://github.com/pycodeDev/private-net-apps/stargazers)
-![Shellcheck](https://img.shields.io/badge/shellcheck-passing-brightgreen)
-![Bash](https://img.shields.io/badge/bash-%3E%3D%205.0-blue)
-
 # 📖 Private Net Apps — Instruction & Usage
 
 ## 🔹 Apa ini?
