@@ -8,6 +8,7 @@ PROXYCHAINS_CONF="/etc/proxychains4.conf"
 
 # OPSIONAL: pilih negara default (kosongkan untuk server terbaik otomatis)
 WS_COUNTRY="${WS_COUNTRY:-}"            # contoh: "US" / "DE" / "SG"
+AUTO_SNOWFLAKE="${AUTO_SNOWFLAKE:-0}" # 1 = enable, 0 = disable
 
 # Pastikan root
 [ "$(id -u)" -eq 0 ] || { echo "Run as root"; exit 1; }
@@ -17,12 +18,12 @@ ip link set "$IFACE" down
 macchanger -r "$IFACE"
 ip link set "$IFACE" up
 
-echo "[2] Aktifkan Windscribe firewall (killswitch)..."
+echo "[2] Activating Windscribe firewall (killswitch)..."
 # ini akan blok semua trafik non-VPN, dan mengizinkan koneksi ke server Windscribe saja
 systemctl enable --now windscribe-helper.service >/dev/null 2>&1 || true
 windscribe-cli firewall on
 
-echo "[3] Koneksi Windscribe..."
+echo "[3] Connecting to Windscribe..."
 if [[ -n "$WS_COUNTRY" ]]; then
   windscribe-cli connect "$WS_COUNTRY"
 else
@@ -102,17 +103,17 @@ start_tor_level1() {
 
   # kalau belum ada bridges.txt atau kosong, coba ambil otomatis
   if [ ! -s "$BRLIST" ]; then
-    echo "[i] Mencoba mendapatkan obfs4 bridges dari BridgeDB..."
+    echo "[i] Try To Get obfs4 bridges from BridgeDB..."
     if ! fetch_obfs4_bridges; then
-      echo "[!] Tidak bisa mendapatkan obfs4 bridges [CAPTCHA Protected]."
-      echo "    Silahkan Isi Manual Bridges Dari https://bridges.torproject.org/ dan simpan di $BRLIST."
-      if [ "${AUTO_SNOWFLAKE:-0}" = "1" ]; then
+      echo "[!] Can't Get obfs4 bridges [CAPTCHA Protected]."
+      echo "    Please Manual Input Bridges From https://bridges.torproject.org/ and save to $BRLIST."
+      if [ "$AUTO_SNOWFLAKE" = "1" ]; then
         enable_snowflake_fallback
         systemctl restart tor 2>/dev/null || tor -f /etc/tor/torrc & disown
         return
       else
-        echo "[i] Dialihkan ke mode basic."
-        echo "    Silahkan Isi Manual Bridges Dari https://bridges.torproject.org/ dan simpan di $BRLIST."
+        echo "[i] Redirect To Basic mode."
+        echo "    Please Manual Input Bridges From https://bridges.torproject.org/ and save to $BRLIST."
         start_tor_basic
         return
       fi
@@ -135,7 +136,7 @@ EOF
 case "$PRIVNET_LEVEL" in
   0)  echo "[i] Tor mode: basic";  start_tor_basic ;;
   1)      echo "[i] Tor mode: stealth (obfs4 bridges)"; start_tor_level1 ;;
-  *)      echo "[!] Level Tidak Diketahui '$PRIVNET_LEVEL' → Gunakan basic"; start_tor_basic ;;
+  *)      echo "[!] Unknown Level '$PRIVNET_LEVEL' → Use basic"; start_tor_basic ;;
 esac
 
 echo "[5] Configure proxychains4..."
