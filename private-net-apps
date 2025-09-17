@@ -5,48 +5,200 @@ usage() {
   cat <<'EOF'
 Run private-net-apps as root.
 
+-h | --help
+  Show this help
+
 Usage:
   sudo private-net-apps <start|shut|shuffle> [options]
 
-Options (mode start):
-  -iface <name>         Interface fisik (default: wlan0)
-  -level <basic|1>      Tingkat proteksi:
-                        - basic : VPN + Tor biasa (default)
-                        - 1     : VPN + Tor via obfs4 bridges (stealth)
+Options: 
+  - start mode:
+    -if | --iface <name>        Interface fisik (default: wlan0)
+    -l | --level <basic|1>      Tingkat proteksi:
+                                - basic : VPN + Tor biasa (default)
+                                - 1     : VPN + Tor via obfs4 bridges (stealth)
+    -as | -auto_snowflake <0|1> Tingkat proteksi:
+                                - 1     : VPN + Tor via Snowflake Proxy
+                                - 0     : VPN + Tor biasa
+  
+  - shuffle mode:
+    sudo private-net-apps shuffle [command] [option]
 
-Options (mode shuffle): diteruskan ke vpn-shuffle.sh (ONLY_FREE, COUNTRY_ALLOW, INTERVAL)
+    command:
+      --rotate-stop              Hentikan rotasi
+      --rotate-status            Status rotasi
+      --rotate-start             Mulai rotasi, Running In Background
 
-Examples:
-  sudo private-net-apps start
-  sudo private-net-apps start -iface eth0 -level 1
-  sudo private-net-apps shut
-  sudo private-net-apps shuffle once //still developing
+    option
+      -r | --rotate              Mode rotasi (default: 600s), butuh Ctrl+C untuk berhenti
+      -o | --once                Sekali Shuffle
+      -f | --free                Pilih lokasi FREE saja (default: 1)
+      -c | --country <code>      Filter negara (default: semua)
+      -i | --interval <seconds>  Interval rotasi (default: 600s)
+
 EOF
 }
 
-[ "$(id -u)" -eq 0 ] || { usage; echo "Run as root"; exit 1; }
+# must run as root
+if [ "$(id -u)" -ne 0 ]; then
+  usage
+  echo "Run as root"
+  exit 1
+fi
+
+# require at least one positional arg (mode)
+if [ $# -lt 1 ]; then
+  usage
+  exit 1
+fi
 
 MODE="${1:-}"; shift || true
 
 case "${MODE}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
   start)
     IFACE="wlan0"
     LEVEL="basic"
+    AUTO_SNOWFLAKE="0"
+
     while [[ $# -gt 0 ]]; do
       case "$1" in
-        -iface) IFACE="${2:-}"; shift 2;;
-        -level) LEVEL="${2:-}"; shift 2;;
-        *) echo "Unknown option: $1"; usage; exit 1;;
+        -if|--iface)
+          if [[ $# -lt 2 || "${2#-}" = "${2}" && -z "${2}" ]]; then
+            echo "Error: -iface requires an argument."
+            usage
+            exit 1
+          fi
+          IFACE="$2"; shift 2
+          ;;
+        -l|--level)
+          if [[ $# -lt 2 ]]; then
+            echo "Error: -level requires an argument."
+            usage
+            exit 1
+          fi
+          LEVEL="$2"; shift 2
+          ;;
+        -as|--auto_snowflake)
+          if [[ $# -lt 2 ]]; then
+            echo "Error: -auto_snowflake requires an argument."
+            usage
+            exit 1
+          fi
+          case "$2" in
+            0|1) AUTO_SNOWFLAKE="$2" ; shift 2 ;;
+            *)
+              echo "Error: -auto_snowflake valid values are 0 or 1."
+              usage
+              exit 1
+              ;;
+          esac
+          ;;
+        -h|--help)
+          usage
+          exit 0
+          ;;
+        *)
+          echo "Unknown option: $1"
+          usage
+          exit 1
+          ;;
       esac
     done
-    IFACE="$IFACE" PRIVNET_LEVEL="$LEVEL" /usr/local/bin/vpn-on.sh
+
+    # Export env only for the invoked script, don't pollute environment
+    IFACE="$IFACE" PRIVNET_LEVEL="$LEVEL" AUTO_SNOWFLAKE="$AUTO_SNOWFLAKE" /usr/local/bin/vpn-on.sh
     ;;
   shut)
     /usr/local/bin/vpn-off.sh
     ;;
   shuffle)
-    /usr/local/bin/vpn-shuffle.sh "$@"
+    # default values
+    ONLY_FREE="0"
+    COUNTRY_ALLOW=""
+    INTERVAL="600"
+    TRIES="30"
+    SUBCMD=""
+
+    # ambil command pertama setelah "shuffle"
+    if [[ $# -gt 0 ]]; then
+      SUBCMD="$1"; shift
+    fi
+
+    case "$SUBCMD" in
+      --rotate-start|--rotate-stop|--rotate-status)
+        # parse option tambahan hanya untuk rotate-start
+        if [[ "$SUBCMD" == "--rotate-start" ]]; then
+          while [[ $# -gt 0 ]]; do
+            case "$1" in
+              -f|--free) ONLY_FREE="1"; shift ;;
+              -c|--country)
+                [[ $# -lt 2 ]] && { echo "Error: --country requires a code (e.g. US,DE)."; exit 1; }
+                COUNTRY_ALLOW="$2"; shift 2
+                ;;
+              -i|--interval)
+                [[ $# -lt 2 ]] && { echo "Error: --interval requires seconds."; exit 1; }
+                INTERVAL="$2"; shift 2
+                ;;
+              *) echo "Unknown shuffle option: $1"; usage; exit 1 ;;
+            esac
+          done
+          env ONLY_FREE="$ONLY_FREE" COUNTRY_ALLOW="$COUNTRY_ALLOW" INTERVAL="$INTERVAL" TRIES="$TRIES" \
+            /usr/local/bin/vpn-shuffle.sh --rotate-start
+        else
+          # stop / status tidak butuh opsi tambahan
+          /usr/local/bin/vpn-shuffle.sh "$SUBCMD"
+        fi
+        ;;
+      -r|--rotate)
+        # parse options tambahan: -f, -c, -i
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            -f|--free) ONLY_FREE="1"; shift ;;
+            -c|--country)
+              [[ $# -lt 2 ]] && { echo "Error: --country needs value"; exit 1; }
+              COUNTRY_ALLOW="$2"; shift 2
+              ;;
+            -i|--interval)
+              [[ $# -lt 2 ]] && { echo "Error: --interval needs value"; exit 1; }
+              INTERVAL="$2"; shift 2
+              ;;
+            *) echo "Unknown shuffle option: $1"; usage; exit 1 ;;
+          esac
+        done
+        env ONLY_FREE="$ONLY_FREE" COUNTRY_ALLOW="$COUNTRY_ALLOW" INTERVAL="$INTERVAL" \
+          /usr/local/bin/vpn-shuffle.sh rotate
+        ;;
+      -o|--once)
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            -f|--free) ONLY_FREE="1"; shift ;;
+            -c|--country)
+              [[ $# -lt 2 ]] && { echo "Error: --country needs value"; exit 1; }
+              COUNTRY_ALLOW="$2"; shift 2
+              ;;
+            *) echo "Unknown shuffle option: $1"; usage; exit 1 ;;
+          esac
+        done
+        env ONLY_FREE="$ONLY_FREE" COUNTRY_ALLOW="$COUNTRY_ALLOW" INTERVAL="$INTERVAL" \
+        /usr/local/bin/vpn-shuffle.sh once
+        ;;
+      ""|-h|--help)
+        usage; exit 0
+        ;;
+      *)
+        echo "Unknown shuffle command: $SUBCMD"
+        usage
+        exit 1
+        ;;
+    esac
     ;;
   *)
-    usage; exit 1;;
+    echo "Unknown mode: ${MODE}"
+    usage
+    exit 1
+    ;;
 esac

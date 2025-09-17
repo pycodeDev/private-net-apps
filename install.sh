@@ -6,6 +6,44 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+usage() {
+  cat <<'EOF'
+Run private-net-apps as root.
+
+-h | --help
+  Show this help
+
+Usage:
+  sudo private-net-apps <start|shut|shuffle> [options]
+
+Options: 
+  - start mode:
+    -if | --iface <name>        Physical interface (default: wlan0)
+    -l | --level <basic|1>      Protection Level:
+                                - basic : VPN + Tor (default)
+                                - 1     : VPN + Tor via obfs4 bridges (stealth)
+    -as | -auto_snowflake <0|1> SnowFlake Protection (if obfs4 bridges failed):
+                                - 1     : VPN + Tor via Snowflake Proxy
+                                - 0     : VPN + Tor
+  
+  - shuffle mode:
+    sudo private-net-apps shuffle [command] [option]
+
+    command:
+      --rotate-stop              Stop Rotation
+      --rotate-status            Status Rotation
+      --rotate-start             Start Rotation in Background Mode
+
+    option
+      -r | --rotate              Rotation Mode in Foreground, need Ctrl + C to stop
+      -o | --once                Make Once Shuffle Location
+      -f | --free                Free Location (default: 1(Free))
+      -c | --country <code>      Filter by Country (default: all)
+      -i | --interval <seconds>  Interval Rotation (default: 600s)
+
+EOF
+}
+
 # ====== Colors & Icons ======
 COL_RESET='\033[0m'
 COL_YELLOW='\033[33m'
@@ -194,12 +232,4 @@ chmod +x /usr/local/bin/vpn-shuffle.sh
 chmod +x /usr/local/bin/private-net-apps
 
 echo "Installasi Selesai."
-echo "Usage:"
-echo "  private-net-apps [start|shut|shuffle] [args]"
-echo "  sudo AUTO_SNOWFLAKE=1 private-net-apps start -level 1   Pengganti Level 1 obfs4 jika list tidak bridge ditak ditemukan"
-echo "Args untuk start:"
-echo "  iface <name>         Interface fisik (default: wlan0)"
-echo "  level <0|1>      Tingkat proteksi (default: 0 basic)"
-echo "  level <0|1>      Tingkat proteksi (default: 1 obfs4)"
-echo ""
-echo "shuffle (still dev):"
+usage

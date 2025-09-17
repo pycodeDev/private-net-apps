@@ -6,27 +6,8 @@ ONLY_FREE="${ONLY_FREE:-1}"     # 1 = pilih lokasi FREE saja, 0 = semua
 COUNTRY_ALLOW="${COUNTRY_ALLOW:-}"  # contoh: "US,DE,SG" (whitelist negara, kosong = semua)
 INTERVAL="${INTERVAL:-600}"     # jeda rotasi (detik) untuk mode --rotate
 TRIES="${TRIES:-30}"            # percobaan baca lokasi (jaga-jaga CLI lambat)
-
-# --- HELP ---
-usage() {
-  cat <<EOF
-Usage:
-  sudo ./vpn_shuffle.sh once            # connect sekali ke server acak
-  sudo ./vpn_shuffle.sh rotate          # rotate (ganti server) tiap \$INTERVAL detik
-
-Env vars (opsional):
-  ONLY_FREE=1           pilih lokasi FREE saja (default 1)
-  COUNTRY_ALLOW="US,DE" whitelist negara (kode 2 huruf), kosong = semua
-  INTERVAL=600          jeda rotasi untuk mode rotate (detik)
-
-Contoh:
-  sudo ONLY_FREE=1 ./vpn_shuffle.sh once
-  sudo COUNTRY_ALLOW="SG,JP" INTERVAL=900 ./vpn_shuffle.sh rotate
-EOF
-}
-
-[[ $# -lt 1 ]] && { usage; exit 1; }
-MODE="$1"
+PIDFILE="${PIDFILE:-/run/vpn-shuffle.pid}"
+LOGFILE="${LOGFILE:-/var/log/vpn-shuffle.log}"
 
 # --- Prasyarat ---
 command -v windscribe-cli >/dev/null || { echo "windscribe-cli tidak ditemukan."; exit 1; }
@@ -35,8 +16,7 @@ windscribe-cli firewall on >/dev/null || true
 
 # --- Fungsi: ambil daftar lokasi, filter, acak satu ---
 pick_random_location() {
-  # Ambil lokasi (kadang butuh retry karena CLI ngambil daftar dari API)
-  local out="" i
+  local out i
   for ((i=1;i<=TRIES;i++)); do
     if out="$(sudo windscribe-cli locations 2>/dev/null)"; then
       [[ -n "$out" ]] && break
@@ -44,15 +24,11 @@ pick_random_location() {
     sleep 1
   done
 
-  # Normalisasi: ambil baris yang mengandung kode negara + nama lokasi
-  # Contoh output umum: "US  New York  [FREE]" atau "DE  Frankfurt"
-  # Kita bentuk list: "US New York [FREE]" → lalu filter
   echo "$out" | awk 'NF>0' | \
   awk '
     BEGIN{OFS=" "}
     {
       line=$0
-      # buang garis, header dsb
       if (line ~ /Locations|----|Country|City/){next}
       gsub(/\t+/," ",line)
       sub(/^[[:space:]]+/,"",line)
@@ -64,23 +40,13 @@ pick_random_location() {
       for (i in A){ if (A[i]!="") WL[A[i]]=1 }
     }
     {
-      # Ambil token pertama sebagai country code (2 huruf)
       cc=$1
-      # Sisa jadi nama lokasi
       loc=$0
       sub(/^[^ ]+ +/,"",loc)
-
-      # Filter FREE jika diminta
       if (only_free=="1" && index(toupper(loc),"[FREE]")==0) next
-
-      # Whitelist negara jika diset
       if (length(allow)>0 && !(cc in WL)) next
-
-      # Buang tag [FREE]/[PREMIUM] dari nama lokasi
       gsub(/\[.*\]/,"",loc)
       sub(/[[:space:]]+$/,"",loc)
-
-      # Cetak dalam format "cc|loc"
       if (length(cc)>0 && length(loc)>0) print cc"|"loc
     }
   ' | shuf -n 1
@@ -88,39 +54,120 @@ pick_random_location() {
 
 # --- Fungsi: connect ke lokasi "CC|Name" atau fallback ke best ---
 connect_random() {
-  local choice
+  local choice cc name
   choice="$(pick_random_location || true)"
 
   if [[ -z "$choice" ]]; then
-    echo "[i] Tidak dapat memilih lokasi (mungkin filter terlalu ketat). Connect best saja."
+    echo "[i] Can't find any location (strict filter). Connect to the best."
     sudo windscribe-cli connect
     return
   fi
 
-  local cc="${choice%%|*}"
-  local name="${choice#*|}"
+  cc="${choice%%|*}"
+  name="${choice#*|}"
 
-  echo "[i] Menghubungkan ke lokasi acak: $cc - $name"
-  # Banyak CLI Windscribe menerima "negara" saja,
-  # tetapi untuk spesifik kota/cluster biasanya cukup pakai negara,
-  # atau gabungan string: "US New York"
-  # Coba kota dulu, fallback ke negara.
+  echo "[i] Connect To Random Location: $cc - $name"
   if ! sudo windscribe-cli connect "$cc $name"; then
     sudo windscribe-cli connect "$cc"
   fi
 }
 
-# --- Trap: putuskan saat script dihentikan (mode rotate) ---
+# --- Helper PID/status ---
+is_running() {
+  local pid="$1"
+  if [[ -z "$pid" ]]; then return 1; fi
+  if kill -0 "$pid" >/dev/null 2>&1; then return 0; else return 1; fi
+}
+
+start_background_rotate() {
+  if [[ -f "$PIDFILE" ]]; then
+    pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+    if is_running "$pid"; then
+      echo "rotate already running with PID $pid"
+      return 0
+    else
+      echo "Stale PID file found, removing."
+      rm -f "$PIDFILE"
+    fi
+  fi
+
+  echo "[*] Starting background rotate (interval ${INTERVAL}s). Logs -> ${LOGFILE}"
+  # start self in background as new session; redirect stdout/stderr to logfile
+  # we call the same script with "rotate" mode (foreground loop) in background
+  setsid bash -c "exec \"$0\" rotate" >>"$LOGFILE" 2>&1 &
+  pid=$!
+  # give it a moment to start
+  sleep 1
+  if is_running "$pid"; then
+    echo "$pid" > "$PIDFILE"
+    echo "Started rotate (PID $pid)"
+    return 0
+  else
+    echo "Failed to start rotate; check $LOGFILE"
+    return 1
+  fi
+}
+
+stop_background_rotate() {
+  if [[ ! -f "$PIDFILE" ]]; then
+    echo "rotate not running (no PID file)."
+    return 1
+  fi
+  pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+  if [[ -z "$pid" ]]; then
+    echo "PID file empty; removing."
+    rm -f "$PIDFILE"
+    return 1
+  fi
+  if ! is_running "$pid"; then
+    echo "Process $pid not running; removing stale PID file."
+    rm -f "$PIDFILE"
+    return 1
+  fi
+
+  echo "[*] Stopping rotate (PID $pid)..."
+  kill "$pid" || true
+  # wait up to 10s for termination
+  for i in {1..10}; do
+    if ! is_running "$pid"; then
+      break
+    fi
+    sleep 1
+  done
+  if is_running "$pid"; then
+    echo "PID $pid did not stop; sending SIGKILL."
+    kill -9 "$pid" || true
+  fi
+  rm -f "$PIDFILE"
+  echo "Stopped."
+  return 0
+}
+
+status_background_rotate() {
+  if [[ -f "$PIDFILE" ]]; then
+    pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+    if is_running "$pid"; then
+      echo "rotate running (PID $pid)."
+      return 0
+    else
+      echo "PID file exists but process $pid not running."
+      return 1
+    fi
+  else
+    echo "rotate not running."
+    return 3
+  fi
+}
+
+# --- Trap untuk foreground rotate (cleanup on exit) ---
 cleanup() {
   echo
   echo "[*] Memutuskan koneksi Windscribe..."
   sudo windscribe-cli disconnect || true
 }
-if [[ "$MODE" == "rotate" ]]; then
-  trap cleanup EXIT
-fi
+trap cleanup EXIT
 
-# --- Eksekusi ---
+# --- Eksekusi modes ---
 case "$MODE" in
   once)
     sudo windscribe-cli disconnect >/dev/null 2>&1 || true
@@ -128,13 +175,22 @@ case "$MODE" in
     sudo windscribe-cli status
     ;;
   rotate)
-    echo "[*] Mode rotate aktif. Interval: ${INTERVAL}s. Tekan Ctrl+C untuk berhenti."
+    echo "[*] Mode rotate (foreground). Interval: ${INTERVAL}s. Ctrl+C to stop."
     while true; do
       sudo windscribe-cli disconnect >/dev/null 2>&1 || true
       connect_random
       sudo windscribe-cli status || true
       sleep "$INTERVAL"
     done
+    ;;
+  rotate-start)
+    start_background_rotate
+    ;;
+  rotate-stop)
+    stop_background_rotate
+    ;;
+  rotate-status)
+    status_background_rotate
     ;;
   *)
     usage; exit 1;;
