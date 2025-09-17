@@ -120,11 +120,7 @@ flowchart TD
 4. Setelah itu bisa langsung dipanggil:
 
    ```bash
-   private-net-apps start -iface eth0 -level basic
-   private-net-apps start -iface wlan0 -level 1        # pakai obfs4
-   AUTO_SNOWFLAKE=1 private-net-apps start -level 1    # pakai snowflake
-   private-net-apps shut
-   private-net-apps shuffle
+   private-net-apps 
    ```
 
 ---
